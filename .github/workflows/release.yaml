@@ -26,6 +26,9 @@ jobs:
             --username ${{ github.actor }} \
             --password-stdin
 
+      - name: Fetch dependencies
+        run: helm dependency update
+
       - name: Package chart
         run: helm package . --destination ./dist
 
