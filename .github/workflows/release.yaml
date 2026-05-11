@@ -1,0 +1,35 @@
+name: Release Chart
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "3.17.0"
+
+      - name: Log in to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io \
+            --username ${{ github.actor }} \
+            --password-stdin
+
+      - name: Package chart
+        run: helm package . --destination ./dist
+
+      - name: Push chart to GHCR
+        run: |
+          chart=$(ls ./dist/*.tgz)
+          helm push "$chart" oci://ghcr.io/${{ github.repository_owner }}/charts
