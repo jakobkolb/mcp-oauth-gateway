@@ -1,0 +1,185 @@
+{{- $base := .Values.global.baseDomain -}}
+{{- $issuer := .Values.global.clusterIssuer | default "letsencrypt-prod" -}}
+{{- $authServerUrl := .Values.global.authServerUrl -}}
+{{- $rn := .Release.Name -}}
+{{- $wkName := printf "%s-well-known" $rn -}}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $wkName }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+data:
+  default.conf: |
+    server {
+        listen 80;
+        # RFC 9728: protected resource metadata
+        location = /.well-known/oauth-protected-resource {
+            default_type application/json;
+            return 200 '{"resource":"https://$host","authorization_servers":["{{ $authServerUrl }}"],"scopes_provided":["openid","profile","email"]}';
+        }
+        # RFC 8414: auth server metadata for claude.ai MCP discovery
+        # token_endpoint_auth_methods_supported=["none"] tells clients not to send a
+        # client_secret (PKCE is sufficient).  registration_endpoint enables RFC 7591
+        # Dynamic Client Registration, which the MCP spec requires.
+        location = /.well-known/oauth-authorization-server {
+            default_type application/json;
+            return 200 '{"issuer":"{{ $authServerUrl }}","authorization_endpoint":"{{ $authServerUrl }}/auth","token_endpoint":"{{ $authServerUrl }}/token","registration_endpoint":"{{ $authServerUrl }}/register","jwks_uri":"{{ $authServerUrl }}/keys","scopes_supported":["openid","profile","email","offline_access"],"response_types_supported":["code"],"grant_types_supported":["authorization_code","refresh_token"],"token_endpoint_auth_methods_supported":["client_secret_post","client_secret_basic"],"code_challenge_methods_supported":["S256"]}';
+        }
+        # RFC 7591: Dynamic Client Registration — MCP spec requires this.
+        # Returns a fixed public-client registration so claude.ai learns to use
+        # token_endpoint_auth_method=none (PKCE only, no client_secret).
+        location = /register {
+            content_by_lua_block {
+                ngx.req.read_body()
+                ngx.header["Content-Type"] = "application/json"
+                ngx.status = 201
+                ngx.say('{"client_id":"claude-mcp","client_id_issued_at":' .. ngx.time() .. ',"redirect_uris":["https://claude.ai/api/mcp/auth_callback"],"grant_types":["authorization_code","refresh_token"],"response_types":["code"],"token_endpoint_auth_method":"none","code_challenge_methods_supported":["S256"]}')
+                return ngx.exit(201)
+            }
+        }
+        # Proxy Dex OIDC discovery — the /.well-known prefix ingress intercepts
+        # this before the Dex ingress's /, so we must forward it internally.
+        location = /.well-known/openid-configuration {
+            proxy_pass http://{{ $rn }}-dex:5556;
+        }
+        # Scope injection: claude.ai omits "openid" from authorization requests,
+        # which Dex rejects.  Add it here before forwarding to Dex.
+        # Uses OpenResty Lua (rewrite_by_lua_block) to modify the scope arg.
+        location /auth {
+            rewrite_by_lua_block {
+                local args = ngx.req.get_uri_args()
+                local scope = args.scope or ""
+                if scope ~= "" and not scope:find("openid", 1, true) then
+                    args.scope = "openid " .. scope
+                end
+                ngx.req.set_uri_args(args)
+            }
+            proxy_pass http://{{ $rn }}-dex:5556;
+        }
+        location / { return 404; }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $wkName }}
+  labels:
+    app.kubernetes.io/name: {{ $wkName }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ $wkName }}
+  template:
+    metadata:
+      labels:
+        app: {{ $wkName }}
+    spec:
+      containers:
+        - name: nginx
+          image: openresty/openresty:alpine
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx/conf.d
+          readinessProbe:
+            httpGet:
+              path: /.well-known/oauth-protected-resource
+              port: 80
+            initialDelaySeconds: 30
+            periodSeconds: 10
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $wkName }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $wkName }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  selector:
+    app: {{ $wkName }}
+  ports:
+    - port: 80
+      targetPort: 80
+---
+{{/* /.well-known ingress per MCP hostname — no auth annotation */}}
+{{- range .Values.mcpEndpoints }}
+{{- $host := printf "%s.%s" .subdomain $base }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $rn }}-{{ .subdomain }}-well-known
+  labels:
+    app.kubernetes.io/managed-by: {{ $.Release.Service }}
+  annotations:
+    cert-manager.io/cluster-issuer: {{ $issuer }}
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [{{ $host }}]
+      secretName: {{ $rn }}-{{ .subdomain }}-tls
+  rules:
+    - host: {{ $host }}
+      http:
+        paths:
+          - path: /.well-known
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $wkName }}
+                port:
+                  number: 80
+---
+{{- end }}
+{{/* auth host ingress: routes /.well-known and /auth to this service.
+     /.well-known/* prefix beats the Dex ingress's / — openid-configuration is
+     proxied to Dex internally; oauth-authorization-server is served as static JSON.
+     /auth* prefix also beats / — scope injection is applied before forwarding to Dex.
+     All other auth.<baseDomain> paths (/token, /keys, /callback) still go to Dex. */}}
+{{- $authHost := printf "auth.%s" $base }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $rn }}-auth-well-known
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  annotations:
+    cert-manager.io/cluster-issuer: {{ $issuer }}
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [{{ $authHost }}]
+      secretName: {{ $rn }}-dex-tls
+  rules:
+    - host: {{ $authHost }}
+      http:
+        paths:
+          - path: /.well-known
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $wkName }}
+                port:
+                  number: 80
+          - path: /auth
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $wkName }}
+                port:
+                  number: 80
+          - path: /register
+            pathType: Exact
+            backend:
+              service:
+                name: {{ $wkName }}
+                port:
+                  number: 80

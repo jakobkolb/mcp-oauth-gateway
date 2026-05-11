@@ -1,0 +1,13 @@
+apiVersion: v2
+name: api-gateway
+version: 0.1.0
+description: OAuth authentication gateway (Dex + oauth2-proxy + well-known server)
+type: application
+
+dependencies:
+  - name: dex
+    version: "0.24.0"
+    repository: "https://charts.dexidp.io"
+  - name: oauth2-proxy
+    version: "7.18.0"
+    repository: "https://oauth2-proxy.github.io/manifests"

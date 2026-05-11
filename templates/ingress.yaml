@@ -1,0 +1,66 @@
+{{- $base := .Values.global.baseDomain -}}
+{{- $issuer := .Values.global.clusterIssuer | default "letsencrypt-prod" -}}
+{{- $rn := .Release.Name -}}
+
+{{/* MCP endpoints — authenticated via oauth2-proxy Bearer JWT validation */}}
+{{- $authSvc := printf "http://%s-oauth2-proxy.%s.svc.cluster.local:4180/oauth2/auth" $rn .Release.Namespace -}}
+{{- range .Values.mcpEndpoints }}
+{{- $host := printf "%s.%s" .subdomain $base }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $rn }}-{{ .subdomain }}
+  labels:
+    app.kubernetes.io/managed-by: {{ $.Release.Service }}
+  annotations:
+    cert-manager.io/cluster-issuer: {{ $issuer }}
+    nginx.ingress.kubernetes.io/auth-url: {{ $authSvc | quote }}
+    nginx.ingress.kubernetes.io/auth-response-headers: "X-Auth-Request-User,X-Auth-Request-Email,Authorization"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /mcp/$2
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [{{ $host }}]
+      secretName: {{ $rn }}-{{ .subdomain }}-tls
+  rules:
+    - host: {{ $host }}
+      http:
+        paths:
+          - path: /mcp(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: {{ $rn }}-{{ .service }}
+                port:
+                  number: 8000
+{{- end }}
+
+{{/* Dex (OAuth AS): no auth — /.well-known is handled by the auth-well-known ingress */}}
+{{- $authHost := printf "auth.%s" $base }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $rn }}-dex
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  annotations:
+    cert-manager.io/cluster-issuer: {{ $issuer }}
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [{{ $authHost }}]
+      secretName: {{ $rn }}-dex-tls
+  rules:
+    - host: {{ $authHost }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $rn }}-dex
+                port:
+                  number: 5556
