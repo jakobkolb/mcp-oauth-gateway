@@ -34,7 +34,7 @@ spec:
               service:
                 name: {{ $rn }}-{{ .service }}
                 port:
-                  number: 8000
+                  number: {{ default 8000 .port }}
 {{- end }}
 
 {{/* Dex (OAuth AS): no auth — /.well-known is handled by the auth-well-known ingress */}}
