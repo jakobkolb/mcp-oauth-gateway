@@ -15,6 +15,7 @@
 mcpEndpoints: []
 # - subdomain: calendar
 #   service: mcp-calendar
+#   port: 8080  # Optional, defaults to 8000
 
 
 # ── Dex (OAuth 2.1 authorization server) ─────────────────────────────────────
