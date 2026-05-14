@@ -47,7 +47,7 @@ The scope-injection layer on `/auth` silently prepends `openid` to authorization
 
 ```bash
 helm install api-gateway oci://ghcr.io/jakobkolb/charts/api-gateway \
-  --version 0.1.0 \
+  --version 0.2.0 \
   --set global.baseDomain=example.com \
   --set global.authServerUrl=https://auth.example.com \
   --set global.createSecrets=true \
@@ -63,7 +63,7 @@ helm install api-gateway oci://ghcr.io/jakobkolb/charts/api-gateway \
 # Chart.yaml
 dependencies:
   - name: api-gateway
-    version: "0.1.0"
+    version: "0.2.0"
     repository: "oci://ghcr.io/jakobkolb/charts"
 ```
 
@@ -104,6 +104,15 @@ global:
 | `dex.*` | Passed through to the [Dex chart](https://github.com/dex-idp/helm-charts). | see `values.yaml` |
 | `oauth2-proxy.*` | Passed through to the [oauth2-proxy chart](https://github.com/oauth2-proxy/manifests). | see `values.yaml` |
 
+## Chart dependencies
+
+| Chart | Version | Repository |
+|-------|---------|------------|
+| **dex** | 0.24.0 | https://charts.dexidp.io |
+| **oauth2-proxy** | 7.18.0 | https://oauth2-proxy.github.io/manifests |
+
+Dependencies are automatically fetched during Helm package and install operations.
+
 ## Secret management without `createSecrets`
 
 When `global.createSecrets=false` the chart expects the following Secrets to already exist in the release namespace (created e.g. by `secrets-bootstrap.sh` in the umbrella chart or by an external secrets operator):
@@ -114,6 +123,38 @@ When `global.createSecrets=false` the chart expects the following Secrets to alr
 | `dex-static-client` | `DEX_CLIENT_SECRET` |
 | `oauth2-proxy` | `client-id`, `client-secret`, `cookie-secret` |
 
-## Publishing a new version
+## CI/Publishing Pipeline
 
-Bump `version` in `Chart.yaml` and push a git tag `v<version>`. The GitHub Actions workflow will package and push the chart to `ghcr.io/jakobkolb/charts`.
+### Release process
+
+This repository uses GitHub Actions to automate chart releases. The release workflow is triggered when a git tag matching `v*` is pushed.
+
+**To publish a new version:**
+
+1. Update the `version` field in [Chart.yaml](Chart.yaml)
+2. Commit the changes
+3. Create and push a git tag:
+   ```bash
+   git tag v0.2.0
+   git push origin v0.2.0
+   ```
+
+### Release workflow
+
+The GitHub Actions workflow ([.github/workflows/release.yaml](.github/workflows/release.yaml)) performs the following steps:
+
+1. **Checkout** - Retrieves the repository code for the tagged version
+2. **Setup Helm** - Installs Helm 3.17.0
+3. **Authenticate** - Logs in to GitHub Container Registry (GHCR) using the repository token
+4. **Fetch dependencies** - Runs `helm dependency update` to download Dex and oauth2-proxy charts
+5. **Package chart** - Creates a `.tgz` package in the `./dist` directory
+6. **Push to registry** - Publishes the packaged chart to the OCI registry at `oci://ghcr.io/<owner>/charts`
+
+The chart is then available for installation with:
+```bash
+helm install api-gateway oci://ghcr.io/<owner>/charts/api-gateway --version <version>
+```
+
+### Registry access
+
+Published charts are hosted on GitHub Container Registry (GHCR) and publicly accessible. Authentication is required only when pushing new versions (handled automatically by GitHub Actions).
