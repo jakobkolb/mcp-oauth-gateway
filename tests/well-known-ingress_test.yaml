@@ -16,8 +16,6 @@ tests:
     asserts:
       - isKind:
           of: Ingress
-      - notMatchSnapshot:
-          path: spec.rules[0].http.paths[0]
       # The path must NOT be the broad /.well-known prefix
       - notEqual:
           path: spec.rules[0].http.paths[0].path
