@@ -1,0 +1,137 @@
+# helm unittest tests for well-known ingress
+# Run with: helm plugin install https://github.com/helm-unittest/helm-unittest && helm unittest .
+suite: well-known ingress ACME challenge fix
+templates:
+  - templates/well-known.yaml
+tests:
+  - it: MCP endpoint well-known ingress must not use broad /.well-known Prefix (would block ACME HTTP-01 challenges)
+    set:
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      global.clusterIssuer: letsencrypt-test
+      mcpEndpoints:
+        - subdomain: test
+          service: mcp-test
+    documentIndex: 3
+    asserts:
+      - isKind:
+          of: Ingress
+      # The path must NOT be the broad /.well-known prefix
+      - notEqual:
+          path: spec.rules[0].http.paths[0].path
+          value: /.well-known
+      # Each declared path must be Exact, not Prefix
+      - notEqual:
+          path: spec.rules[0].http.paths[0].pathType
+          value: Prefix
+
+  - it: MCP endpoint well-known ingress should serve /.well-known/oauth-authorization-server (Exact)
+    set:
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      global.clusterIssuer: letsencrypt-test
+      mcpEndpoints:
+        - subdomain: test
+          service: mcp-test
+    documentIndex: 3
+    asserts:
+      - isKind:
+          of: Ingress
+      - contains:
+          path: spec.rules[0].http.paths
+          content:
+            path: /.well-known/oauth-authorization-server
+            pathType: Exact
+            backend:
+              service:
+                name: RELEASE-NAME-well-known
+                port:
+                  number: 80
+
+  - it: MCP endpoint well-known ingress should serve /.well-known/oauth-protected-resource (Exact)
+    set:
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      global.clusterIssuer: letsencrypt-test
+      mcpEndpoints:
+        - subdomain: test
+          service: mcp-test
+    documentIndex: 3
+    asserts:
+      - isKind:
+          of: Ingress
+      - contains:
+          path: spec.rules[0].http.paths
+          content:
+            path: /.well-known/oauth-protected-resource
+            pathType: Exact
+            backend:
+              service:
+                name: RELEASE-NAME-well-known
+                port:
+                  number: 80
+
+  - it: auth host well-known ingress must not use broad /.well-known Prefix (would block ACME HTTP-01 challenges)
+    set:
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      global.clusterIssuer: letsencrypt-test
+      mcpEndpoints:
+        - subdomain: test
+          service: mcp-test
+    documentIndex: 4
+    asserts:
+      - isKind:
+          of: Ingress
+      - notEqual:
+          path: spec.rules[0].http.paths[0].path
+          value: /.well-known
+      - notEqual:
+          path: spec.rules[0].http.paths[0].pathType
+          value: Prefix
+
+  - it: auth host well-known ingress should serve /.well-known/oauth-authorization-server (Exact)
+    set:
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      global.clusterIssuer: letsencrypt-test
+      mcpEndpoints:
+        - subdomain: test
+          service: mcp-test
+    documentIndex: 4
+    asserts:
+      - isKind:
+          of: Ingress
+      - contains:
+          path: spec.rules[0].http.paths
+          content:
+            path: /.well-known/oauth-authorization-server
+            pathType: Exact
+            backend:
+              service:
+                name: RELEASE-NAME-well-known
+                port:
+                  number: 80
+
+  - it: auth host well-known ingress should serve /.well-known/openid-configuration (Exact)
+    set:
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      global.clusterIssuer: letsencrypt-test
+      mcpEndpoints:
+        - subdomain: test
+          service: mcp-test
+    documentIndex: 4
+    asserts:
+      - isKind:
+          of: Ingress
+      - contains:
+          path: spec.rules[0].http.paths
+          content:
+            path: /.well-known/openid-configuration
+            pathType: Exact
+            backend:
+              service:
+                name: RELEASE-NAME-well-known
+                port:
+                  number: 80

@@ -110,7 +110,9 @@ spec:
     - port: 80
       targetPort: 80
 ---
-{{/* /.well-known ingress per MCP hostname — no auth annotation */}}
+{{/* /.well-known ingress per MCP hostname — no auth annotation.
+     Paths are enumerated explicitly (Exact) so cert-manager's dynamically-created
+     /.well-known/acme-challenge/* solver ingress is never intercepted. */}}
 {{- range .Values.mcpEndpoints }}
 {{- $host := printf "%s.%s" .subdomain $base }}
 apiVersion: networking.k8s.io/v1
@@ -121,6 +123,7 @@ metadata:
     app.kubernetes.io/managed-by: {{ $.Release.Service }}
   annotations:
     cert-manager.io/cluster-issuer: {{ $issuer }}
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
 spec:
   ingressClassName: nginx
   tls:
@@ -130,8 +133,15 @@ spec:
     - host: {{ $host }}
       http:
         paths:
-          - path: /.well-known
-            pathType: Prefix
+          - path: /.well-known/oauth-authorization-server
+            pathType: Exact
+            backend:
+              service:
+                name: {{ $wkName }}
+                port:
+                  number: 80
+          - path: /.well-known/oauth-protected-resource
+            pathType: Exact
             backend:
               service:
                 name: {{ $wkName }}
@@ -139,10 +149,10 @@ spec:
                   number: 80
 ---
 {{- end }}
-{{/* auth host ingress: routes /.well-known and /auth to this service.
-     /.well-known/* prefix beats the Dex ingress's / — openid-configuration is
-     proxied to Dex internally; oauth-authorization-server is served as static JSON.
-     /auth* prefix also beats / — scope injection is applied before forwarding to Dex.
+{{/* auth host ingress: routes specific /.well-known paths and /auth to this service.
+     Paths are enumerated explicitly (Exact) so cert-manager's /.well-known/acme-challenge/*
+     solver ingress is never intercepted by this rule.
+     /auth and /register use Prefix/Exact as before — scope injection applied before Dex.
      All other auth.<baseDomain> paths (/token, /keys, /callback) still go to Dex. */}}
 {{- $authHost := printf "auth.%s" $base }}
 apiVersion: networking.k8s.io/v1
@@ -153,6 +163,7 @@ metadata:
     app.kubernetes.io/managed-by: {{ .Release.Service }}
   annotations:
     cert-manager.io/cluster-issuer: {{ $issuer }}
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
 spec:
   ingressClassName: nginx
   tls:
@@ -162,8 +173,15 @@ spec:
     - host: {{ $authHost }}
       http:
         paths:
-          - path: /.well-known
-            pathType: Prefix
+          - path: /.well-known/oauth-authorization-server
+            pathType: Exact
+            backend:
+              service:
+                name: {{ $wkName }}
+                port:
+                  number: 80
+          - path: /.well-known/openid-configuration
+            pathType: Exact
             backend:
               service:
                 name: {{ $wkName }}
