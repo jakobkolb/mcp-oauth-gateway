@@ -15,6 +15,12 @@ jobs:
         with:
           version: "3.17.0"
 
+      - name: Add chart repositories
+        run: |
+          helm repo add dexidp https://charts.dexidp.io
+          helm repo add oauth2-proxy https://oauth2-proxy.github.io/manifests
+          helm repo update
+
       - name: Fetch chart dependencies
         run: helm dependency update
 
