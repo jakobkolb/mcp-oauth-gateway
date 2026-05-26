@@ -2,6 +2,13 @@
 # These are the same dex: and oauth2-proxy: sections that previously lived at
 # the top level of the umbrella chart's values.yaml.
 
+# ── Global values (set by the umbrella chart) ────────────────────────────────
+# Placeholder defaults so `helm lint` works standalone; override in production.
+global:
+  baseDomain: "example.com"
+  authServerUrl: "https://auth.example.com"
+  clusterIssuer: "letsencrypt-prod"
+
 # ── MCP endpoints ────────────────────────────────────────────────────────────
 # List of MCP servers the api-gateway should expose.  Each entry generates:
 #   - an authenticated /mcp ingress at <subdomain>.<global.baseDomain>
