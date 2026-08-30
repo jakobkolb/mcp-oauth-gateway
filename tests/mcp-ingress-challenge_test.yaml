@@ -1,0 +1,64 @@
+# helm unittest tests for the RFC 9728 Bearer challenge on the MCP ingress
+# Run with: helm plugin install https://github.com/helm-unittest/helm-unittest && helm unittest .
+suite: MCP ingress bearer challenge
+templates:
+  - templates/ingress.yaml
+tests:
+  - it: MCP ingress must answer 401 with a resource_metadata challenge
+    set:
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      mcpEndpoints:
+        - subdomain: test
+          service: mcp-test
+    documentIndex: 0
+    asserts:
+      - isKind:
+          of: Ingress
+      # RFC 9728 section 5.1 — points the client at the metadata it needs to
+      # start a fresh authorization once its token stops being accepted.
+      - matchRegex:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/configuration-snippet"]
+          pattern: 'add_header WWW-Authenticate .*resource_metadata='
+      # `always`, or add_header applies only to 2xx/3xx and never to the 401.
+      - matchRegex:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/configuration-snippet"]
+          pattern: 'always;'
+
+  - it: the challenge must carry a scope hint including offline_access
+    set:
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      mcpEndpoints:
+        - subdomain: test
+          service: mcp-test
+    documentIndex: 0
+    asserts:
+      - isKind:
+          of: Ingress
+      # The scope on the challenge is the MCP spec's first-priority signal for
+      # which scopes a client should request, ahead of the resource metadata.
+      - matchRegex:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/configuration-snippet"]
+          pattern: 'scope="[^"]*offline_access'
+
+  - it: every configured MCP endpoint gets the challenge
+    set:
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      mcpEndpoints:
+        - subdomain: calendar
+          service: mcp-calendar
+        - subdomain: obsidian
+          service: mcp-obsidian
+          port: 8080
+    documentIndex: 1
+    asserts:
+      - isKind:
+          of: Ingress
+      - equal:
+          path: spec.rules[0].host
+          value: obsidian.mcp.example.com
+      - matchRegex:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/configuration-snippet"]
+          pattern: 'add_header WWW-Authenticate .*resource_metadata='
