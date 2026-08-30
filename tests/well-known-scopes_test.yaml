@@ -1,0 +1,76 @@
+# helm unittest tests for OAuth scope advertisement and injection
+# Run with: helm plugin install https://github.com/helm-unittest/helm-unittest && helm unittest .
+suite: well-known scope advertisement and injection
+templates:
+  - templates/well-known.yaml
+tests:
+  - it: protected resource metadata must use the RFC 9728 scopes_supported field
+    set:
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      mcpEndpoints:
+        - subdomain: test
+          service: mcp-test
+    documentIndex: 0
+    asserts:
+      - isKind:
+          of: ConfigMap
+      # RFC 9728 defines scopes_supported; scopes_provided is not a field in the
+      # spec, so clients see no advertised scopes and omit the scope parameter.
+      # Anchored on the protected-resource document specifically — the
+      # authorization-server document further down already uses the right field.
+      - matchRegex:
+          path: data["default.conf"]
+          pattern: '"resource":"https://\$host"[^\n]*"scopes_supported":'
+      - notMatchRegex:
+          path: data["default.conf"]
+          pattern: '"scopes_provided":'
+
+  - it: protected resource metadata must advertise offline_access
+    set:
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      mcpEndpoints:
+        - subdomain: test
+          service: mcp-test
+    documentIndex: 0
+    asserts:
+      - isKind:
+          of: ConfigMap
+      # Dex only mints a refresh token when the authorization request carries
+      # offline_access, so it has to be advertised for clients to request it.
+      - matchRegex:
+          path: data["default.conf"]
+          pattern: '"resource":"https://\$host"[^\n]*"scopes_supported":\[[^\]]*"offline_access"'
+
+  - it: scope injector must inject offline_access as well as openid
+    set:
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      mcpEndpoints:
+        - subdomain: test
+          service: mcp-test
+    documentIndex: 0
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - matchRegex:
+          path: data["default.conf"]
+          pattern: 'rewrite_by_lua_block[\s\S]*"offline_access"'
+
+  - it: scope injector must not skip injection when the client sends no scope
+    set:
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      mcpEndpoints:
+        - subdomain: test
+          service: mcp-test
+    documentIndex: 0
+    asserts:
+      - isKind:
+          of: ConfigMap
+      # `scope ~= ""` made the injector a no-op exactly when the client omitted
+      # scope entirely, which Dex then rejects with invalid_scope.
+      - notMatchRegex:
+          path: data["default.conf"]
+          pattern: 'scope ~= ""'
