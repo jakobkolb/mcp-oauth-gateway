@@ -17,7 +17,7 @@ data:
         # RFC 9728: protected resource metadata
         location = /.well-known/oauth-protected-resource {
             default_type application/json;
-            return 200 '{"resource":"https://$host","authorization_servers":["{{ $authServerUrl }}"],"scopes_provided":["openid","profile","email"]}';
+            return 200 '{"resource":"https://$host","authorization_servers":["{{ $authServerUrl }}"],"scopes_supported":["openid","profile","email","offline_access"]}';
         }
         # RFC 8414: auth server metadata for claude.ai MCP discovery
         # token_endpoint_auth_methods_supported=["none"] tells clients not to send a
@@ -44,16 +44,26 @@ data:
         location = /.well-known/openid-configuration {
             proxy_pass http://{{ $rn }}-dex:5556;
         }
-        # Scope injection: claude.ai omits "openid" from authorization requests,
-        # which Dex rejects.  Add it here before forwarding to Dex.
+        # Scope injection: claude.ai under-specifies the scopes it asks for.
+        # Dex rejects a request without "openid", and only mints a refresh token
+        # when the request carries "offline_access" — without it every token
+        # expires with no way to renew it.  Add both before forwarding to Dex.
         # Uses OpenResty Lua (rewrite_by_lua_block) to modify the scope arg.
         location /auth {
             rewrite_by_lua_block {
                 local args = ngx.req.get_uri_args()
                 local scope = args.scope or ""
-                if scope ~= "" and not scope:find("openid", 1, true) then
-                    args.scope = "openid " .. scope
+                -- match whole space-delimited scope tokens, so a scope such as
+                -- "openid-foo" is not mistaken for "openid"
+                local function has(s, want)
+                    return (" " .. s .. " "):find(" " .. want .. " ", 1, true) ~= nil
                 end
+                for _, want in ipairs({"openid", "offline_access"}) do
+                    if not has(scope, want) then
+                        if scope == "" then scope = want else scope = scope .. " " .. want end
+                    end
+                end
+                args.scope = scope
                 ngx.req.set_uri_args(args)
             }
             proxy_pass http://{{ $rn }}-dex:5556;
