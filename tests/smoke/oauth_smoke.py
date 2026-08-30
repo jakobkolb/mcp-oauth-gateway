@@ -24,6 +24,7 @@ import urllib.request
 WK_URL = os.environ.get("WK_URL", "http://127.0.0.1:8080")
 DEX_URL = os.environ.get("DEX_URL", "http://127.0.0.1:5556")
 REDIRECT_URI = os.environ.get("SMOKE_REDIRECT_URI", "http://127.0.0.1:9999/cb")
+MCP_URL = os.environ.get("MCP_URL", "http://127.0.0.1:8081/mcp")
 CLIENT_ID = os.environ.get("SMOKE_CLIENT_ID", "claude-mcp")
 # Empty when the chart declares a public client — then PKCE is the only credential.
 CLIENT_SECRET = os.environ.get("SMOKE_CLIENT_SECRET", "")
@@ -113,6 +114,19 @@ def token(**form):
             return exc.code, {"raw": raw}
 
 
+def mcp_request(bearer=None):
+    """POST the MCP endpoint through the ingress; returns (status, headers)."""
+    headers = {"Content-Type": "application/json"}
+    if bearer:
+        headers["Authorization"] = "Bearer " + bearer
+    req = urllib.request.Request(MCP_URL, data=b"{}", method="POST", headers=headers)
+    try:
+        resp = urllib.request.urlopen(req, timeout=15)
+        return resp.status, dict(resp.headers)
+    except urllib.error.HTTPError as exc:
+        return exc.code, dict(exc.headers)
+
+
 def main():
     print("Discovery documents")
     prm = get_json(WK_URL + "/.well-known/oauth-protected-resource")
@@ -140,6 +154,7 @@ def main():
 
     if code is None:
         return report()
+    idt = None
 
     status, tok = token(grant_type="authorization_code", code=code,
                         redirect_uri=REDIRECT_URI, client_id=CLIENT_ID,
@@ -161,6 +176,8 @@ def main():
             check("public client rejects a stale client_secret (connectors must drop theirs)",
                   status2 == 401)
 
+    idt = tok.get("id_token")
+
     print("\nRefresh grant")
     if "refresh_token" in tok:
         status, refreshed = token(grant_type="refresh_token",
@@ -170,6 +187,26 @@ def main():
         check("refresh grant returns a new access token", "access_token" in refreshed)
         check("refresh grant rotates the refresh token",
               refreshed.get("refresh_token") not in (None, tok["refresh_token"]))
+
+    print("\nMCP endpoint challenge")
+    status, headers = mcp_request()
+    challenge = headers.get("WWW-Authenticate", "")
+    check("unauthenticated MCP request is rejected with 401", status == 401, "got %s" % status)
+    check("401 carries a WWW-Authenticate resource_metadata challenge",
+          "resource_metadata=" in challenge, challenge or "<no WWW-Authenticate header>")
+    check("challenge carries a scope hint including offline_access",
+          "offline_access" in challenge, challenge or "<no WWW-Authenticate header>")
+
+    status, headers = mcp_request("not.a.valid.jwt")
+    check("malformed bearer token is rejected with 401", status == 401, "got %s" % status)
+    check("rejected token also gets the challenge",
+          "resource_metadata=" in headers.get("WWW-Authenticate", ""))
+
+    # Proves the rig is faithful: the 401s above are real rejections, not a
+    # stack that fails everything.
+    if idt:
+        status, _ = mcp_request(idt)
+        check("a valid token reaches the MCP upstream", status == 200, "got %s" % status)
 
     return report()
 

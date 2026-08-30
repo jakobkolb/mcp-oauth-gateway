@@ -17,6 +17,14 @@ metadata:
     cert-manager.io/cluster-issuer: {{ $issuer }}
     nginx.ingress.kubernetes.io/auth-url: {{ $authSvc | quote }}
     nginx.ingress.kubernetes.io/auth-response-headers: "X-Auth-Request-User,X-Auth-Request-Email,Authorization"
+    {{/* RFC 9728 5.1: nginx's auth_request drops the auth server's response headers,
+         and oauth2-proxy does not send a challenge either, so synthesise one here.
+         "always" is required — add_header otherwise skips the 401.
+         The scope hint is the MCP spec's first-priority signal for which scopes a
+         client should request; keep it in step with scopes_supported in
+         templates/well-known.yaml. */}}
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      add_header WWW-Authenticate 'Bearer resource_metadata="https://$host/.well-known/oauth-protected-resource", scope="openid profile email offline_access"' always;
     nginx.ingress.kubernetes.io/use-regex: "true"
     nginx.ingress.kubernetes.io/rewrite-target: /mcp/$2
 spec:
