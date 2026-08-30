@@ -48,9 +48,12 @@ dex:
     oauth2:
       skipApprovalScreen: true
     staticClients:
+      # Public client: authenticates with PKCE alone, matching what /register
+      # hands out.  A secret here would make Dex reject PKCE-only clients
+      # (Claude Code, Claude Desktop) that have nowhere to put one.
       - id: claude-mcp
         name: Claude MCP
-        secretEnv: DEX_CLIENT_SECRET
+        public: true
         redirectURIs:
           - https://claude.ai/api/mcp/auth_callback
   envFrom:
