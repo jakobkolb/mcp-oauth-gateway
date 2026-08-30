@@ -1,0 +1,45 @@
+# helm unittest tests for client authentication metadata
+# Run with: helm plugin install https://github.com/helm-unittest/helm-unittest && helm unittest .
+suite: well-known client authentication metadata
+templates:
+  - templates/well-known.yaml
+tests:
+  - it: authorization server metadata must offer the auth method that /register hands out
+    set:
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      mcpEndpoints:
+        - subdomain: test
+          service: mcp-test
+    documentIndex: 0
+    asserts:
+      - isKind:
+          of: ConfigMap
+      # /register returns token_endpoint_auth_method=none, so advertising only
+      # client_secret_* leaves a client unable to authenticate at all.
+      - matchRegex:
+          path: data["default.conf"]
+          pattern: '"token_endpoint_auth_methods_supported":\["none"\]'
+      - notMatchRegex:
+          path: data["default.conf"]
+          pattern: '"token_endpoint_auth_methods_supported":\[[^\]]*client_secret'
+
+  - it: dynamic client registration must stay a public PKCE registration
+    set:
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      mcpEndpoints:
+        - subdomain: test
+          service: mcp-test
+    documentIndex: 0
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - matchRegex:
+          path: data["default.conf"]
+          pattern: '"token_endpoint_auth_method":"none"'
+      # /register is unauthenticated; handing out a client_secret there would
+      # give it to any caller.
+      - notMatchRegex:
+          path: data["default.conf"]
+          pattern: 'ngx.say\([^)]*client_secret'

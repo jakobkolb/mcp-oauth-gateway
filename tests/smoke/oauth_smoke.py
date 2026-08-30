@@ -121,6 +121,16 @@ def main():
     check("protected resource metadata advertises offline_access",
           "offline_access" in prm.get("scopes_supported", []))
 
+    asm = get_json(WK_URL + "/.well-known/oauth-authorization-server")
+    reg = post_json(WK_URL + "/register")
+    check("authorization server metadata offers the auth method /register hands out",
+          reg["token_endpoint_auth_method"] in asm["token_endpoint_auth_methods_supported"],
+          "register=%s  metadata=%s" % (reg["token_endpoint_auth_method"],
+                                        asm["token_endpoint_auth_methods_supported"]))
+    check("the chart's Dex client is public, matching that registration",
+          CLIENT_SECRET == "",
+          "" if not CLIENT_SECRET else "client has a secret, so a PKCE-only client cannot authenticate")
+
     print("\nAuthorization flow")
     # A client that finds no scopes_supported omits the scope parameter entirely.
     # The injector has to supply openid, or Dex rejects with invalid_scope.
@@ -137,6 +147,19 @@ def main():
     check("token endpoint returns 200", status == 200, json.dumps(tok) if status != 200 else "")
     check("token response contains a refresh_token", "refresh_token" in tok,
           "keys: %s" % sorted(tok.keys()))
+
+    # Dex compares the presented secret against the stored one even for public
+    # clients, where it is empty. A client still configured with a secret is
+    # therefore rejected -- worth asserting, because it makes the connector
+    # reconfiguration this change requires explicit rather than a surprise.
+    if not CLIENT_SECRET:
+        code2, verifier2 = authorize(None)
+        if code2:
+            status2, _ = token(grant_type="authorization_code", code=code2,
+                               redirect_uri=REDIRECT_URI, client_id=CLIENT_ID,
+                               code_verifier=verifier2, client_secret="a-stale-secret")
+            check("public client rejects a stale client_secret (connectors must drop theirs)",
+                  status2 == 401)
 
     print("\nRefresh grant")
     if "refresh_token" in tok:

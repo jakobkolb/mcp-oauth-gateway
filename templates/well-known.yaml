@@ -25,7 +25,7 @@ data:
         # Dynamic Client Registration, which the MCP spec requires.
         location = /.well-known/oauth-authorization-server {
             default_type application/json;
-            return 200 '{"issuer":"{{ $authServerUrl }}","authorization_endpoint":"{{ $authServerUrl }}/auth","token_endpoint":"{{ $authServerUrl }}/token","registration_endpoint":"{{ $authServerUrl }}/register","jwks_uri":"{{ $authServerUrl }}/keys","scopes_supported":["openid","profile","email","offline_access"],"response_types_supported":["code"],"grant_types_supported":["authorization_code","refresh_token"],"token_endpoint_auth_methods_supported":["client_secret_post","client_secret_basic"],"code_challenge_methods_supported":["S256"]}';
+            return 200 '{"issuer":"{{ $authServerUrl }}","authorization_endpoint":"{{ $authServerUrl }}/auth","token_endpoint":"{{ $authServerUrl }}/token","registration_endpoint":"{{ $authServerUrl }}/register","jwks_uri":"{{ $authServerUrl }}/keys","scopes_supported":["openid","profile","email","offline_access"],"response_types_supported":["code"],"grant_types_supported":["authorization_code","refresh_token"],"token_endpoint_auth_methods_supported":["none"],"code_challenge_methods_supported":["S256"]}';
         }
         # RFC 7591: Dynamic Client Registration — MCP spec requires this.
         # Returns a fixed public-client registration so claude.ai learns to use

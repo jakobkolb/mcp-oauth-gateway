@@ -18,6 +18,10 @@ exit.
 - authorization succeeds even when the client sends no `scope` parameter
 - the token response carries a `refresh_token`
 - the refresh grant succeeds and rotates the refresh token
+- the authorization-server document offers the auth method `/register` hands out
+- the chart's Dex client is public, so PKCE alone is enough to authenticate
+- a public client rejects a stale `client_secret` — the property that requires
+  existing connectors to drop the secret they were configured with
 
 ## Fidelity
 
