@@ -30,7 +30,9 @@ jobs:
         run: helm dependency update
 
       - name: Package chart
-        run: helm package . --destination ./dist
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          helm package . --version "$VERSION" --app-version "$VERSION" --destination ./dist
 
       - name: Push chart to GHCR
         run: |
