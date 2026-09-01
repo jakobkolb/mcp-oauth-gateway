@@ -1,0 +1,25 @@
+# helm unittest tests for well-known config rollout
+# Run with: helm plugin install https://github.com/helm-unittest/helm-unittest && helm unittest .
+suite: well-known deployment restarts on config change
+templates:
+  - templates/well-known.yaml
+tests:
+  - it: deployment pod template must carry a checksum of the well-known config
+    set:
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      mcpEndpoints:
+        - subdomain: test
+          service: mcp-test
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      # Without this annotation nothing tells Kubernetes to recreate the pod when
+      # only the ConfigMap changes, and OpenResty keeps serving the config it read
+      # at startup — stale discovery metadata with no error anywhere.
+      - exists:
+          path: spec.template.metadata.annotations["checksum/config"]
+      - matchRegex:
+          path: spec.template.metadata.annotations["checksum/config"]
+          pattern: ^[a-f0-9]{64}$
