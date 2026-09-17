@@ -1,0 +1,91 @@
+# helm unittest tests for per-endpoint ingress annotations.
+# Run with: helm plugin install https://github.com/helm-unittest/helm-unittest && helm unittest .
+suite: MCP ingress per-endpoint annotations
+templates:
+  - templates/ingress.yaml
+tests:
+  - it: an endpoint without annotations renders exactly the managed set
+    set:
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      mcpEndpoints:
+        - subdomain: calendar
+          service: mcp-calendar
+    documentIndex: 0
+    asserts:
+      - isKind:
+          of: Ingress
+      - equal:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/use-regex"]
+          value: "true"
+      - notExists:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/proxy-body-size"]
+
+  - it: extra annotations land on the ingress
+    set:
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      mcpEndpoints:
+        - subdomain: whisper
+          service: mcp-whisper
+          annotations:
+            nginx.ingress.kubernetes.io/proxy-body-size: "64m"
+            nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/proxy-body-size"]
+          value: "64m"
+      - equal:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/proxy-read-timeout"]
+          value: "300"
+
+  - it: extra annotations must not displace the auth wiring
+    set:
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      mcpEndpoints:
+        - subdomain: whisper
+          service: mcp-whisper
+          annotations:
+            nginx.ingress.kubernetes.io/proxy-body-size: "64m"
+    documentIndex: 0
+    asserts:
+      - matchRegex:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/auth-url"]
+          pattern: 'oauth2-proxy\..*:4180/oauth2/auth$'
+      - matchRegex:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/configuration-snippet"]
+          pattern: 'add_header WWW-Authenticate .*resource_metadata='
+
+  - it: annotations apply only to the endpoint that declares them
+    set:
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      mcpEndpoints:
+        - subdomain: whisper
+          service: mcp-whisper
+          annotations:
+            nginx.ingress.kubernetes.io/proxy-body-size: "64m"
+        - subdomain: calendar
+          service: mcp-calendar
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: spec.rules[0].host
+          value: calendar.mcp.example.com
+      - notExists:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/proxy-body-size"]
+
+  - it: overriding a chart-managed annotation is a hard error
+    set:
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      mcpEndpoints:
+        - subdomain: whisper
+          service: mcp-whisper
+          annotations:
+            nginx.ingress.kubernetes.io/auth-url: http://attacker.example/allow
+    asserts:
+      - failedTemplate:
+          errorPattern: 'is managed by the chart and cannot be overridden'

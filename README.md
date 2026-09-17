@@ -75,6 +75,10 @@ api-gateway:
       service: mcp-calendar   # K8s Service name: <release>-mcp-calendar
     - subdomain: notes
       service: mcp-notes
+    - subdomain: whisper
+      service: mcp-whisper
+      annotations:            # per-endpoint extras — this one accepts audio uploads
+        nginx.ingress.kubernetes.io/proxy-body-size: "64m"
 
 global:
   baseDomain: example.com
@@ -92,7 +96,8 @@ global:
 
 | Key | Description | Default |
 |-----|-------------|---------|
-| `mcpEndpoints` | List of MCP servers to expose. Each entry needs `subdomain` and `service`. | `[]` |
+| `mcpEndpoints` | List of MCP servers to expose. Each entry needs `subdomain` and `service`, and may set `port` (default `8000`) and `annotations`. | `[]` |
+| `mcpEndpoints[].annotations` | Extra ingress annotations for that one endpoint, e.g. `nginx.ingress.kubernetes.io/proxy-body-size` for an endpoint that accepts uploads. The chart's own auth/TLS/rewrite annotations cannot be overridden — doing so fails the render. | `{}` |
 | `global.baseDomain` | Base domain. Endpoints land at `<subdomain>.<baseDomain>`, auth at `auth.<baseDomain>`. | required |
 | `global.authServerUrl` | Public URL of the Dex issuer, e.g. `https://auth.example.com`. | required |
 | `global.clusterIssuer` | cert-manager ClusterIssuer name. | `letsencrypt-prod` |

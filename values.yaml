@@ -15,14 +15,26 @@ global:
 #   - a /.well-known ingress at the same host (no auth)
 #
 # Fields per entry:
-#   subdomain  public hostname prefix  (e.g. "calendar" → calendar.<baseDomain>)
-#   service    K8s service name suffix (e.g. "mcp-calendar" → <release>-mcp-calendar)
+#   subdomain    public hostname prefix  (e.g. "calendar" → calendar.<baseDomain>)
+#   service      K8s service name suffix (e.g. "mcp-calendar" → <release>-mcp-calendar)
+#   port         optional, defaults to 8000
+#   annotations  optional extra ingress annotations for this endpoint only.
+#                Useful for endpoints that accept uploads and therefore need a
+#                larger body limit or a longer read timeout than the default.
+#                The auth, TLS and rewrite annotations are managed by the chart;
+#                setting one of them here fails the render rather than emitting
+#                a duplicate YAML key.
 #
 # Override this list in the umbrella chart's api-gateway: block.
 mcpEndpoints: []
 # - subdomain: calendar
 #   service: mcp-calendar
 #   port: 8080  # Optional, defaults to 8000
+# - subdomain: whisper
+#   service: mcp-whisper
+#   annotations:
+#     nginx.ingress.kubernetes.io/proxy-body-size: "64m"
+#     nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
 
 
 # ── Dex (OAuth 2.1 authorization server) ─────────────────────────────────────
