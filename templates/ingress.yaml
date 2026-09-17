@@ -5,6 +5,7 @@
 {{/* MCP endpoints — authenticated via oauth2-proxy Bearer JWT validation */}}
 {{- $authSvc := printf "http://%s-oauth2-proxy.%s.svc.cluster.local:4180/oauth2/auth" $rn .Release.Namespace -}}
 {{- range .Values.mcpEndpoints }}
+{{- $sub := .subdomain }}
 {{- $host := printf "%s.%s" .subdomain $base }}
 ---
 apiVersion: networking.k8s.io/v1
@@ -27,6 +28,17 @@ metadata:
       add_header WWW-Authenticate 'Bearer resource_metadata="https://$host/.well-known/oauth-protected-resource", scope="openid profile email offline_access"' always;
     nginx.ingress.kubernetes.io/use-regex: "true"
     nginx.ingress.kubernetes.io/rewrite-target: /mcp/$2
+    {{- /* Per-endpoint extras, e.g. a larger proxy-body-size for an endpoint that
+           accepts file uploads. The annotations above are load-bearing for auth and
+           routing, so setting one of them here is a hard error rather than a silently
+           duplicated YAML key. */}}
+    {{- $managed := list "cert-manager.io/cluster-issuer" "nginx.ingress.kubernetes.io/auth-url" "nginx.ingress.kubernetes.io/auth-response-headers" "nginx.ingress.kubernetes.io/configuration-snippet" "nginx.ingress.kubernetes.io/use-regex" "nginx.ingress.kubernetes.io/rewrite-target" }}
+    {{- range $key, $value := .annotations }}
+    {{- if has $key $managed }}
+    {{- fail (printf "mcpEndpoints[%s].annotations: %s is managed by the chart and cannot be overridden" $sub $key) }}
+    {{- end }}
+    {{ $key }}: {{ $value | quote }}
+    {{- end }}
 spec:
   ingressClassName: nginx
   tls:
