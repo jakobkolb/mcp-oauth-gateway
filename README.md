@@ -79,7 +79,7 @@ reconnect each one once after enabling this.
 
 ```bash
 helm install api-gateway oci://ghcr.io/jakobkolb/charts/api-gateway \
-  --version 0.2.0 \
+  --version 0.5.0 \
   --set global.baseDomain=example.com \
   --set global.authServerUrl=https://auth.example.com \
   --set global.createSecrets=true \
@@ -95,7 +95,7 @@ helm install api-gateway oci://ghcr.io/jakobkolb/charts/api-gateway \
 # Chart.yaml
 dependencies:
   - name: api-gateway
-    version: "0.2.0"
+    version: "0.5.0"
     repository: "oci://ghcr.io/jakobkolb/charts"
 ```
 
@@ -136,7 +136,7 @@ global:
 | `global.createSecrets` | Create Kubernetes Secrets from `global.secrets.*`. Disable when using ArgoCD / external secrets. | `false` |
 | `global.secrets.githubClientId` | GitHub OAuth App client ID. | `""` |
 | `global.secrets.githubClientSecret` | GitHub OAuth App client secret. | `""` |
-| `global.secrets.dexClientSecret` | Shared secret between Dex and oauth2-proxy. | `""` |
+| `global.secrets.dexClientSecret` | Placeholder secret for oauth2-proxy. Despite the name it is **not** shared with Dex: `claude-mcp` is a public PKCE client with no secret, and oauth2-proxy runs bearer-only, so the value is never exchanged with anything — it only has to be set. Any random string works. | `""` |
 | `global.secrets.cookieSecret` | 32-byte base64 cookie signing secret for oauth2-proxy. | `""` |
 | `perEndpointConnectors.enabled` | Send each MCP endpoint's login through its own Dex connector so every connector keeps its own refresh token — see [One refresh token per connector](#one-refresh-token-per-connector-perendpointconnectors). | `false` |
 | `perEndpointConnectors.prefix` | Dex connector id prefix; the connector for `<subdomain>` must be named `<prefix><subdomain>`. | `github-` |
@@ -159,8 +159,28 @@ When `global.createSecrets=false` the chart expects the following Secrets to alr
 | Secret name | Keys |
 |-------------|------|
 | `dex-github-client` | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` |
-| `dex-static-client` | `DEX_CLIENT_SECRET` |
+| `dex-static-client` | `DEX_CLIENT_SECRET` — **unused**, see below |
 | `oauth2-proxy` | `client-id`, `client-secret`, `cookie-secret` |
+
+### About the client secret
+
+There is no client secret in this setup. `claude-mcp` is declared `public: true`,
+`/register` hands out `token_endpoint_auth_method: "none"`, and the
+authorization-server metadata advertises `token_endpoint_auth_methods_supported:
+["none"]` — clients authenticate with PKCE alone. Adding a secret to the Dex
+static client would make Dex reject exactly the PKCE-only clients this gateway
+exists for.
+
+Two leftovers still carry the name:
+
+- `dex-static-client` / `DEX_CLIENT_SECRET` is injected into Dex via `envFrom` but
+  referenced nowhere in `dex.config`, so Dex ignores it. It is dead since the
+  static client became public.
+- `oauth2-proxy`'s `client-secret` is set from the same value. oauth2-proxy runs
+  in bearer-only mode (`skip-jwt-bearer-tokens`, `upstream: file:///dev/null`) and
+  never performs a code exchange, so the value is never presented to Dex — it just
+  has to be present. `tests/smoke/run.sh` passes the literal
+  `unused-in-bearer-only-mode` and the smoke test passes.
 
 ## CI/Publishing Pipeline
 
@@ -168,15 +188,16 @@ When `global.createSecrets=false` the chart expects the following Secrets to alr
 
 This repository uses GitHub Actions to automate chart releases. The release workflow is triggered when a git tag matching `v*` is pushed.
 
-**To publish a new version:**
+**To publish a new version:** create and push a git tag.
 
-1. Update the `version` field in [Chart.yaml](Chart.yaml)
-2. Commit the changes
-3. Create and push a git tag:
-   ```bash
-   git tag v0.2.0
-   git push origin v0.2.0
-   ```
+```bash
+git tag v0.5.0
+git push origin v0.5.0
+```
+
+The workflow packages with `--version "${GITHUB_REF_NAME#v}"`, so the tag is the
+source of truth. The `version` in [Chart.yaml](Chart.yaml) is a local dev default
+and does not need to be bumped before tagging.
 
 ### Release workflow
 
@@ -186,7 +207,7 @@ The GitHub Actions workflow ([.github/workflows/release.yaml](.github/workflows/
 2. **Setup Helm** - Installs Helm 3.17.0
 3. **Authenticate** - Logs in to GitHub Container Registry (GHCR) using the repository token
 4. **Fetch dependencies** - Runs `helm dependency update` to download Dex and oauth2-proxy charts
-5. **Package chart** - Creates a `.tgz` package in the `./dist` directory
+5. **Package chart** - Creates a `.tgz` package in `./dist`, versioned from the tag
 6. **Push to registry** - Publishes the packaged chart to the OCI registry at `oci://ghcr.io/<owner>/charts`
 
 The chart is then available for installation with:
