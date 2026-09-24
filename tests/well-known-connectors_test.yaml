@@ -1,0 +1,84 @@
+# helm unittest tests for per-endpoint Dex connector routing
+# Run with: helm plugin install https://github.com/helm-unittest/helm-unittest && helm unittest .
+suite: per-endpoint Dex connectors
+templates:
+  - templates/well-known.yaml
+tests:
+  - it: is off by default, leaving /auth to Dex's own connector choice
+    set:
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      mcpEndpoints:
+        - subdomain: calendar
+          service: mcp-calendar
+    documentIndex: 0
+    asserts:
+      - notMatchRegex:
+          path: data["default.conf"]
+          pattern: 'connector_id'
+
+  - it: maps each endpoint's resource host to its own connector
+    set:
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      perEndpointConnectors.enabled: true
+      dex.config.connectors:
+        - {type: github, id: github}
+        - {type: github, id: github-calendar}
+        - {type: github, id: github-whisper}
+      mcpEndpoints:
+        - subdomain: calendar
+          service: mcp-calendar
+        - subdomain: whisper
+          service: mcp-whisper
+    documentIndex: 0
+    asserts:
+      - matchRegex:
+          path: data["default.conf"]
+          pattern: '\["calendar\.mcp\.example\.com"\] = "github-calendar",'
+      - matchRegex:
+          path: data["default.conf"]
+          pattern: '\["whisper\.mcp\.example\.com"\] = "github-whisper",'
+      # Only the initial authorization request is rewritten — /auth/<connector>
+      # is Dex's own leg — and an explicit connector_id is never overridden.
+      - matchRegex:
+          path: data["default.conf"]
+          pattern: 'if ngx\.var\.uri == "/auth" and args\.connector_id == nil'
+      # The rewritten args must be applied after the connector is chosen.
+      - matchRegex:
+          path: data["default.conf"]
+          pattern: '(?s)args\.connector_id = connector.*ngx\.req\.set_uri_args\(args\)'
+
+  - it: honours a custom connector prefix
+    set:
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      perEndpointConnectors.enabled: true
+      perEndpointConnectors.prefix: "gh-"
+      dex.config.connectors:
+        - {type: github, id: gh-calendar}
+      mcpEndpoints:
+        - subdomain: calendar
+          service: mcp-calendar
+    documentIndex: 0
+    asserts:
+      - matchRegex:
+          path: data["default.conf"]
+          pattern: '\["calendar\.mcp\.example\.com"\] = "gh-calendar",'
+
+  - it: refuses to render when an endpoint has no matching Dex connector
+    set:
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      perEndpointConnectors.enabled: true
+      dex.config.connectors:
+        - {type: github, id: github}
+        - {type: github, id: github-calendar}
+      mcpEndpoints:
+        - subdomain: calendar
+          service: mcp-calendar
+        - subdomain: whisper
+          service: mcp-whisper
+    asserts:
+      - failedTemplate:
+          errorMessage: 'perEndpointConnectors: mcpEndpoints[whisper] needs a Dex connector with id "github-whisper" in dex.config.connectors'

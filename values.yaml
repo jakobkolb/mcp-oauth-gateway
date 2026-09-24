@@ -37,6 +37,24 @@ mcpEndpoints: []
 #     nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
 
 
+# ── Per-endpoint Dex connectors ─────────────────────────────────────────────
+# Every MCP connector registers through /register as the same client
+# (claude-mcp), and Dex keeps only one refresh token per (user, connector,
+# client).  With one shared connector, each login therefore revokes the refresh
+# token of every other MCP connector, which then has to re-authenticate as soon
+# as its access token expires.
+#
+# When enabled, /auth reads the RFC 8707 resource parameter the client sends
+# (https://<subdomain>.<baseDomain>) and pins the login to the Dex connector
+# "<prefix><subdomain>", so each endpoint gets its own offline session and
+# refresh token.  Each of those connectors must exist in dex.config.connectors
+# (the render fails otherwise); they can all share one GitHub OAuth app and
+# callback URL.  Requests without a matching resource are left to Dex as before.
+perEndpointConnectors:
+  enabled: false
+  prefix: "github-"
+
+
 # ── Dex (OAuth 2.1 authorization server) ─────────────────────────────────────
 dex:
   config:
