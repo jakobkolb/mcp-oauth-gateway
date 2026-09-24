@@ -3,6 +3,7 @@
 {{- $authServerUrl := .Values.global.authServerUrl -}}
 {{- $rn := .Release.Name -}}
 {{- $wkName := printf "%s-well-known" $rn -}}
+{{- include "api-gateway.validatePerEndpointConnectors" . -}}
 ---
 apiVersion: v1
 kind: ConfigMap

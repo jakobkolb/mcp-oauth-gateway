@@ -36,6 +36,38 @@ claude.ai  ──/mcp/...──►  nginx-ingress
 
 The scope-injection layer on `/auth` silently prepends `openid` to authorization requests that omit it, working around a quirk in the claude.ai MCP client.
 
+### One refresh token per connector (`perEndpointConnectors`)
+
+`/register` hands every client the same `client_id` (`claude-mcp`), and Dex keeps
+only **one refresh token per user, Dex connector and client**. So when several MCP
+connectors (calendar, obsidian, …) log in through the same Dex connector, each
+login deletes the refresh token of every other connector (Dex
+`server/handlers.go`, "Delete old refresh token from storage"). Those connectors
+keep working until their access token expires, then fail to refresh and need a
+manual reconnect.
+
+With `perEndpointConnectors.enabled`, `/auth` reads the RFC 8707 `resource`
+parameter that MCP clients send (`https://<subdomain>.<baseDomain>`) and adds
+`connector_id=<prefix><subdomain>`. Each endpoint then logs in through its own Dex
+connector, gets its own offline session and keeps its own refresh token. Every
+endpoint needs a matching entry in `dex.config.connectors`, and the render fails
+if one is missing. The connectors can all share one GitHub OAuth app and callback
+URL:
+
+```yaml
+perEndpointConnectors:
+  enabled: true
+dex:
+  config:
+    connectors:
+      - &github {type: github, id: github, name: GitHub, config: {clientID: $GITHUB_CLIENT_ID, clientSecret: $GITHUB_CLIENT_SECRET, redirectURI: https://auth.example.com/callback}}
+      - {<<: *github, id: github-calendar}
+      - {<<: *github, id: github-obsidian}
+```
+
+Existing connectors keep their old refresh token until they next log in, so
+reconnect each one once after enabling this.
+
 ## Prerequisites
 
 - Kubernetes cluster with **nginx-ingress** and **cert-manager** installed.
@@ -106,6 +138,8 @@ global:
 | `global.secrets.githubClientSecret` | GitHub OAuth App client secret. | `""` |
 | `global.secrets.dexClientSecret` | Shared secret between Dex and oauth2-proxy. | `""` |
 | `global.secrets.cookieSecret` | 32-byte base64 cookie signing secret for oauth2-proxy. | `""` |
+| `perEndpointConnectors.enabled` | Send each MCP endpoint's login through its own Dex connector so every connector keeps its own refresh token — see [One refresh token per connector](#one-refresh-token-per-connector-perendpointconnectors). | `false` |
+| `perEndpointConnectors.prefix` | Dex connector id prefix; the connector for `<subdomain>` must be named `<prefix><subdomain>`. | `github-` |
 | `dex.*` | Passed through to the [Dex chart](https://github.com/dex-idp/helm-charts). | see `values.yaml` |
 | `oauth2-proxy.*` | Passed through to the [oauth2-proxy chart](https://github.com/oauth2-proxy/manifests). | see `values.yaml` |
 

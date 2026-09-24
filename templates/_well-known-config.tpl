@@ -59,6 +59,25 @@ server {
                 end
             end
             args.scope = scope
+            {{- if .Values.perEndpointConnectors.enabled }}
+            -- Per-endpoint Dex connector: Dex keeps one refresh token per
+            -- (user, connector, client), and every connector registers as the
+            -- same client, so each login would revoke the refresh token of every
+            -- other connector.  Routing each MCP endpoint through its own Dex
+            -- connector gives it its own offline session.  The endpoint comes
+            -- from the RFC 8707 resource parameter.  Only the initial /auth
+            -- request is rewritten; /auth/<connector> is Dex's own callback leg.
+            if ngx.var.uri == "/auth" and args.connector_id == nil and type(args.resource) == "string" then
+                local connectors = {
+                    {{- range .Values.mcpEndpoints }}
+                    [{{ printf "%s.%s" .subdomain $.Values.global.baseDomain | lower | quote }}] = {{ printf "%s%s" $.Values.perEndpointConnectors.prefix .subdomain | quote }},
+                    {{- end }}
+                }
+                local host = args.resource:match("^[Hh][Tt][Tt][Pp][Ss]?://([^/:?#]+)")
+                local connector = host and connectors[host:lower()]
+                if connector then args.connector_id = connector end
+            end
+            {{- end }}
             ngx.req.set_uri_args(args)
         }
         proxy_pass http://{{ .Release.Name }}-dex:5556;
