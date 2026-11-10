@@ -37,6 +37,14 @@ mcpEndpoints: []
 #     nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
 
 
+# ── Well-known server ────────────────────────────────────────────────────────
+# OpenResty serving the discovery documents, /register and the /auth scope
+# injection.  Keep this a fixed version: it is internet-facing, and a floating tag
+# is whatever each node pulled first.
+wellKnown:
+  image: openresty/openresty:1.31.8.1-alpine
+
+
 # ── Per-endpoint Dex connectors ─────────────────────────────────────────────
 # Every MCP connector registers through /register as the same client
 # (claude-mcp), and Dex keeps only one refresh token per (user, connector,

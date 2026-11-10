@@ -177,7 +177,7 @@ global:
 | Chart | Version | Repository |
 |-------|---------|------------|
 | **dex** | 0.24.0 | https://charts.dexidp.io |
-| **oauth2-proxy** | 7.18.0 | https://oauth2-proxy.github.io/manifests |
+| **oauth2-proxy** | 10.7.3 | https://oauth2-proxy.github.io/manifests |
 
 Dependencies are automatically fetched during Helm package and install operations.
 
