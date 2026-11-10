@@ -17,7 +17,14 @@ metadata:
   annotations:
     cert-manager.io/cluster-issuer: {{ $issuer }}
     nginx.ingress.kubernetes.io/auth-url: {{ $authSvc | quote }}
-    nginx.ingress.kubernetes.io/auth-response-headers: "X-Auth-Request-User,X-Auth-Request-Email,Authorization"
+    {{/* This looks dead and is not. oauth2-proxy runs without --set-xauthrequest and
+         --set-authorization-header, so it returns none of these headers. ingress-nginx
+         still renders each one as auth_request_set + proxy_set_header, and nginx drops
+         a header whose value is empty: the client's own Authorization (the bearer token,
+         valid at every endpoint) and any X-Auth-Request-* / X-Forwarded-User/Email it
+         sent never reach the backend. Remove an entry and that header is forwarded as
+         the client wrote it. */}}
+    nginx.ingress.kubernetes.io/auth-response-headers: "X-Auth-Request-User,X-Auth-Request-Email,X-Forwarded-User,X-Forwarded-Email,Authorization"
     {{/* RFC 9728 5.1: nginx's auth_request drops the auth server's response headers,
          and oauth2-proxy does not send a challenge either, so synthesise one here.
          "always" is required — add_header otherwise skips the 401.
