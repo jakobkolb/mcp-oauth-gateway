@@ -1,0 +1,100 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- /*
+  Only the ingress controller may reach what this chart exposes. The MCP servers
+  have no authentication of their own; the gateway authenticates at the ingress, so
+  without these policies any pod in the cluster can call every backend directly.
+
+  Pods are selected by the labels the sub-charts and the mcp-server chart put on
+  them. Pods that no policy selects stay non-isolated, so cert-manager's ACME solver
+  pods in the same namespace keep working. Traffic from the node to its own pods
+  (kubelet probes) is allowed by the CNIs this was written for; check yours.
+*/ -}}
+{{- $rn := .Release.Name -}}
+{{- $controller := .Values.networkPolicy.ingressController.from -}}
+{{- range .Values.mcpEndpoints }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $rn }}-{{ .subdomain }}-ingress
+  labels:
+    app.kubernetes.io/managed-by: {{ $.Release.Service }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .service }}
+      app.kubernetes.io/instance: {{ $rn }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        {{- toYaml $controller | nindent 8 }}
+      ports:
+        - protocol: TCP
+          port: {{ default 8000 .port }}
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $rn }}-oauth2-proxy-ingress
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: oauth2-proxy
+      app.kubernetes.io/instance: {{ $rn }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        {{- toYaml $controller | nindent 8 }}
+      ports:
+        - protocol: TCP
+          port: 4180
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $rn }}-dex-ingress
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: dex
+      app.kubernetes.io/instance: {{ $rn }}
+  policyTypes: [Ingress]
+  ingress:
+    # The public auth host, oauth2-proxy (JWKS) and the well-known server (proxies
+    # /auth and OIDC discovery to Dex).
+    - from:
+        {{- toYaml $controller | nindent 8 }}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: oauth2-proxy
+              app.kubernetes.io/instance: {{ $rn }}
+        - podSelector:
+            matchLabels:
+              app: {{ $rn }}-well-known
+      ports:
+        - protocol: TCP
+          port: 5556
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $rn }}-well-known-ingress
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ $rn }}-well-known
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        {{- toYaml $controller | nindent 8 }}
+      ports:
+        - protocol: TCP
+          port: 80
+{{- end }}
