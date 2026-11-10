@@ -68,6 +68,32 @@ dex:
 Existing connectors keep their old refresh token until they next log in, so
 reconnect each one once after enabling this.
 
+## Known deviation: no audience binding per endpoint
+
+The MCP authorization spec says an MCP server "MUST validate that access tokens were
+issued specifically for them as the intended audience" (RFC 8707 §2; Token Handling).
+This gateway does not do that. Dex does not implement RFC 8707, so every token's `aud` is
+the one client ID (`claude-mcp`), oauth2-proxy accepts any token with that audience, and
+the `resource` parameter only picks the Dex connector in `/auth`
+([#9](https://github.com/jakobkolb/mcp-oauth-gateway/issues/9)). A token obtained for one
+endpoint is accepted at every other endpoint behind the same release.
+
+This is accepted for one operator, and holds only while these stay true:
+
+- **All endpoints belong to the same party.** Do not front endpoints owned by different
+  people with one release: each could use a token it sees at the others.
+- **The bearer token never reaches a backend.** The `auth-response-headers` annotation on
+  the MCP ingresses is what strips `Authorization` (see the comment in
+  `templates/ingress.yaml`). Keep it.
+- **One issuer per environment.** Staging and production run separate Dex instances with
+  their own signing keys, so a token from one is rejected by the other.
+
+Closing the gap would take one Dex client per endpoint and an oauth2-proxy (or
+`--oidc-extra-audience` handling) that checks the endpoint's own audience, and a
+`/register` that returns a per-endpoint client; see
+[#18](https://github.com/jakobkolb/mcp-oauth-gateway/issues/18) for the same design from the
+refresh-token side.
+
 ## Prerequisites
 
 - Kubernetes cluster with **nginx-ingress** and **cert-manager** installed.
