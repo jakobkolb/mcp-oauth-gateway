@@ -58,6 +58,19 @@ tests:
           path: data["default.conf"]
           pattern: 'rewrite_by_lua_block[\s\S]*"offline_access"'
 
+  - it: scope injector must inject email, which the login allow-list is checked against
+    set:
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      mcpEndpoints:
+        - subdomain: test
+          service: mcp-test
+    documentIndex: 0
+    asserts:
+      - matchRegex:
+          path: data["default.conf"]
+          pattern: 'ipairs\(\{"openid", "email", "offline_access"\}\)'
+
   - it: scope injector must not skip injection when the client sends no scope
     set:
       global.baseDomain: mcp.example.com

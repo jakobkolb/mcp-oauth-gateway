@@ -86,7 +86,8 @@ helm install api-gateway oci://ghcr.io/jakobkolb/charts/api-gateway \
   --set global.secrets.githubClientId=<id> \
   --set global.secrets.githubClientSecret=<secret> \
   --set global.secrets.dexClientSecret=<secret> \
-  --set global.secrets.cookieSecret=<32-byte-base64>
+  --set global.secrets.cookieSecret=<32-byte-base64> \
+  --set global.secrets.allowedEmails=<your GitHub primary email>
 ```
 
 ### As an umbrella chart dependency
@@ -122,6 +123,7 @@ global:
     githubClientSecret: ""
     dexClientSecret: ""
     cookieSecret: ""
+    allowedEmails: ""               # who may log in, one address per line
 ```
 
 ## Values reference
@@ -138,6 +140,7 @@ global:
 | `global.secrets.githubClientSecret` | GitHub OAuth App client secret. | `""` |
 | `global.secrets.dexClientSecret` | Shared secret between Dex and oauth2-proxy. | `""` |
 | `global.secrets.cookieSecret` | 32-byte base64 cookie signing secret for oauth2-proxy. | `""` |
+| `global.secrets.allowedEmails` | Addresses allowed to log in, one per line: the GitHub account's primary email. Everyone else is rejected at the gateway. Required: without it any GitHub account could log in. | `""` |
 | `perEndpointConnectors.enabled` | Send each MCP endpoint's login through its own Dex connector so every connector keeps its own refresh token — see [One refresh token per connector](#one-refresh-token-per-connector-perendpointconnectors). | `false` |
 | `perEndpointConnectors.prefix` | Dex connector id prefix; the connector for `<subdomain>` must be named `<prefix><subdomain>`. | `github-` |
 | `dex.*` | Passed through to the [Dex chart](https://github.com/dex-idp/helm-charts). | see `values.yaml` |
@@ -161,6 +164,7 @@ When `global.createSecrets=false` the chart expects the following Secrets to alr
 | `dex-github-client` | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` |
 | `dex-static-client` | `DEX_CLIENT_SECRET` |
 | `oauth2-proxy` | `client-id`, `client-secret`, `cookie-secret` |
+| `oauth2-proxy-allowed-emails` | `restricted_user_access` (addresses allowed to log in, one per line). oauth2-proxy does not start without it. |
 
 ## CI/Publishing Pipeline
 

@@ -24,7 +24,7 @@ SMOKE_CLIENT_ID="${SMOKE_CLIENT_ID:-claude-mcp}"
 
 cleanup() {
   docker rm -f "$RELEASE-dex" "$RELEASE-well-known" "$RELEASE-oauth2-proxy" \
-    "$RELEASE-upstream" "$RELEASE-ingress" >/dev/null 2>&1 || true
+    "$RELEASE-upstream" "$RELEASE-ingress" "$RELEASE-oauth2-proxy-deny" >/dev/null 2>&1 || true
   docker network rm "$NETWORK" >/dev/null 2>&1 || true
   rm -rf "$WORK_DIR"
 }
@@ -63,12 +63,22 @@ docker run -d --name "$RELEASE-upstream" --network "$NETWORK" \
   "$OPENRESTY_IMAGE" >/dev/null
 # Host networking so oauth2-proxy reaches Dex at the same issuer URL the tokens
 # carry; the ingress replica reaches it back via host.docker.internal.
-docker run -d --name "$RELEASE-oauth2-proxy" --network host "$OAUTH2_PROXY_IMAGE" \
-  --provider=oidc "--oidc-issuer-url=http://127.0.0.1:$DEX_PORT" \
-  --upstream=file:///dev/null --email-domain=* --skip-jwt-bearer-tokens=true \
-  --skip-provider-button=true --http-address=0.0.0.0:4180 \
-  --client-id="$SMOKE_CLIENT_ID" --client-secret=unused-in-bearer-only-mode \
-  --cookie-secret="$(head -c 32 /dev/urandom | base64 | head -c 32)" >/dev/null
+# The allow-list holds the mock connector's identity; a second instance holds a
+# different address and must reject the same token.
+printf 'kilgore@kilgore.trout\n' > "$WORK_DIR/allowed-emails"
+printf 'someone.else@example.com\n' > "$WORK_DIR/other-emails"
+chmod 644 "$WORK_DIR/allowed-emails" "$WORK_DIR/other-emails"
+start_oauth2_proxy() {  # name port emails-file
+  docker run -d --name "$1" --network host -v "$3:/etc/allowed-emails:ro" "$OAUTH2_PROXY_IMAGE" \
+    --provider=oidc "--oidc-issuer-url=http://127.0.0.1:$DEX_PORT" \
+    --upstream=file:///dev/null --authenticated-emails-file=/etc/allowed-emails \
+    --skip-jwt-bearer-tokens=true \
+    --skip-provider-button=true "--http-address=0.0.0.0:$2" \
+    --client-id="$SMOKE_CLIENT_ID" --client-secret=unused-in-bearer-only-mode \
+    --cookie-secret="$(head -c 32 /dev/urandom | base64 | head -c 32)" >/dev/null
+}
+start_oauth2_proxy "$RELEASE-oauth2-proxy" 4180 "$WORK_DIR/allowed-emails"
+start_oauth2_proxy "$RELEASE-oauth2-proxy-deny" 4181 "$WORK_DIR/other-emails"
 docker run -d --name "$RELEASE-ingress" --network "$NETWORK" -p "$INGRESS_PORT:80" \
   --add-host=host.docker.internal:host-gateway \
   -v "$WORK_DIR/ingress.conf:/etc/nginx/conf.d/default.conf:ro" \

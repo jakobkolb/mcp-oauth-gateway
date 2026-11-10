@@ -25,6 +25,8 @@ WK_URL = os.environ.get("WK_URL", "http://127.0.0.1:8080")
 DEX_URL = os.environ.get("DEX_URL", "http://127.0.0.1:5556")
 REDIRECT_URI = os.environ.get("SMOKE_REDIRECT_URI", "http://127.0.0.1:9999/cb")
 MCP_URL = os.environ.get("MCP_URL", "http://127.0.0.1:8081/mcp")
+# A second oauth2-proxy whose allow-list does not contain the test identity.
+DENY_AUTH_URL = os.environ.get("DENY_AUTH_URL", "http://127.0.0.1:4181/oauth2/auth")
 CLIENT_ID = os.environ.get("SMOKE_CLIENT_ID", "claude-mcp")
 # Empty when the chart declares a public client — then PKCE is the only credential.
 CLIENT_SECRET = os.environ.get("SMOKE_CLIENT_SECRET", "")
@@ -207,6 +209,15 @@ def main():
     if idt:
         status, _ = mcp_request(idt)
         check("a valid token reaches the MCP upstream", status == 200, "got %s" % status)
+        # The token above came from a request without any scope, so reaching the
+        # upstream also proves the injected email scope satisfies the allow-list.
+        req = urllib.request.Request(DENY_AUTH_URL, headers={"Authorization": "Bearer " + idt})
+        try:
+            status = urllib.request.urlopen(req, timeout=15).status
+        except urllib.error.HTTPError as e:
+            status = e.code
+        check("the same token is rejected when its email is not on the allow-list",
+              status == 401, "got %s" % status)
 
     return report()
 

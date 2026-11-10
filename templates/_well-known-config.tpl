@@ -42,7 +42,9 @@ server {
     # Scope injection: claude.ai under-specifies the scopes it asks for.
     # Dex rejects a request without "openid", and only mints a refresh token
     # when the request carries "offline_access" — without it every token
-    # expires with no way to renew it.  Add both before forwarding to Dex.
+    # expires with no way to renew it.  oauth2-proxy admits a token only if
+    # its email claim is on the allow-list, and Dex only adds that claim for
+    # the "email" scope.  Add all three before forwarding to Dex.
     # Uses OpenResty Lua (rewrite_by_lua_block) to modify the scope arg.
     location /auth {
         rewrite_by_lua_block {
@@ -53,7 +55,7 @@ server {
             local function has(s, want)
                 return (" " .. s .. " "):find(" " .. want .. " ", 1, true) ~= nil
             end
-            for _, want in ipairs({"openid", "offline_access"}) do
+            for _, want in ipairs({"openid", "email", "offline_access"}) do
                 if not has(scope, want) then
                     if scope == "" then scope = want else scope = scope .. " " .. want end
                 end
