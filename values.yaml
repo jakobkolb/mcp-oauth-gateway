@@ -55,6 +55,28 @@ perEndpointConnectors:
   prefix: "github-"
 
 
+# ── NetworkPolicy ────────────────────────────────────────────────────────────
+# Off by default: it needs a CNI that enforces NetworkPolicy (Calico does), and the
+# selector below has to match where your ingress controller really runs.
+#
+# When enabled, the MCP backends, oauth2-proxy, Dex and the well-known server accept
+# traffic from the ingress controller only (plus oauth2-proxy and the well-known
+# server towards Dex).  Without it any pod in the cluster can call a backend directly,
+# with no token.
+networkPolicy:
+  enabled: false
+  ingressController:
+    # NetworkPolicyPeer entries, as in the Kubernetes API.  The default is the
+    # upstream ingress-nginx chart's namespace; the MicroK8s ingress addon runs in
+    # "ingress".  If the controller uses hostNetwork its traffic does not come from a
+    # pod, so a namespaceSelector will not match it: use an ipBlock with the node
+    # address instead.
+    from:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: ingress-nginx
+
+
 # ── Dex (OAuth 2.1 authorization server) ─────────────────────────────────────
 dex:
   config:

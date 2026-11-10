@@ -1,0 +1,97 @@
+# helm unittest tests for the opt-in NetworkPolicy
+suite: network policy
+release:
+  name: gw
+templates:
+  - templates/networkpolicy.yaml
+set:
+  global.baseDomain: mcp.example.com
+  global.authServerUrl: https://auth.mcp.example.com
+  mcpEndpoints:
+    - subdomain: obsidian
+      service: mcp-obsidian
+      port: 8080
+    - subdomain: calendar
+      service: mcp-calendar
+tests:
+  - it: renders nothing by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders one policy per endpoint plus oauth2-proxy, Dex and the well-known server
+    set:
+      networkPolicy.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 5
+      - isKind:
+          of: NetworkPolicy
+
+  - it: an endpoint policy selects its backend pods and opens only its port to the ingress controller
+    set:
+      networkPolicy.enabled: true
+    documentSelector:
+      path: metadata.name
+      value: gw-obsidian-ingress
+    asserts:
+      - equal:
+          path: spec.podSelector.matchLabels
+          value:
+            app.kubernetes.io/name: mcp-obsidian
+            app.kubernetes.io/instance: gw
+      - equal:
+          path: spec.policyTypes
+          value: [Ingress]
+      - equal:
+          path: spec.ingress[0].ports
+          value:
+            - protocol: TCP
+              port: 8080
+      - equal:
+          path: spec.ingress[0].from[0].namespaceSelector.matchLabels["kubernetes.io/metadata.name"]
+          value: ingress-nginx
+
+  - it: the port defaults to 8000 like the ingress does
+    set:
+      networkPolicy.enabled: true
+    documentSelector:
+      path: metadata.name
+      value: gw-calendar-ingress
+    asserts:
+      - equal:
+          path: spec.ingress[0].ports[0].port
+          value: 8000
+
+  - it: the ingress controller peers can be replaced, for a controller on hostNetwork
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.ingressController.from:
+        - ipBlock:
+            cidr: 192.168.10.20/32
+    documentSelector:
+      path: metadata.name
+      value: gw-oauth2-proxy-ingress
+    asserts:
+      - equal:
+          path: spec.ingress[0].from
+          value:
+            - ipBlock:
+                cidr: 192.168.10.20/32
+      - equal:
+          path: spec.ingress[0].ports[0].port
+          value: 4180
+
+  - it: Dex also accepts oauth2-proxy and the well-known server
+    set:
+      networkPolicy.enabled: true
+    documentSelector:
+      path: metadata.name
+      value: gw-dex-ingress
+    asserts:
+      - lengthEqual:
+          path: spec.ingress[0].from
+          count: 3
+      - equal:
+          path: spec.ingress[0].ports[0].port
+          value: 5556
