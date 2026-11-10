@@ -1,0 +1,65 @@
+# helm unittest tests: the OAuth endpoints must not opt out of the HTTPS redirect.
+#
+# The authorization server's endpoints MUST be served over HTTPS (MCP authorization
+# spec, Security Considerations / Communication Security). ssl-redirect "false" was
+# once added to keep ACME HTTP-01 challenges from being redirected; ingress-nginx
+# already exempts /.well-known/acme-challenge from the redirect by default
+# (no-tls-redirect-locations), so the opt-out only left /auth, /token, /register and
+# the metadata documents answering over plain HTTP.
+suite: HTTPS redirect stays on
+release:
+  name: gw
+templates:
+  - templates/ingress.yaml
+  - templates/well-known.yaml
+tests:
+  - it: the Dex ingress does not disable the HTTPS redirect
+    set:
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      mcpEndpoints:
+        - subdomain: test
+          service: mcp-test
+    template: templates/ingress.yaml
+    documentSelector:
+      path: metadata.name
+      value: gw-dex
+    asserts:
+      - isKind:
+          of: Ingress
+      - notExists:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/ssl-redirect"]
+
+  - it: the well-known ingresses do not disable the HTTPS redirect
+    set:
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      mcpEndpoints:
+        - subdomain: test
+          service: mcp-test
+    template: templates/well-known.yaml
+    documentSelector:
+      path: metadata.name
+      value: gw-test-well-known
+    asserts:
+      - isKind:
+          of: Ingress
+      - notExists:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/ssl-redirect"]
+
+  - it: the auth host's well-known ingress does not disable the HTTPS redirect
+    set:
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      mcpEndpoints:
+        - subdomain: test
+          service: mcp-test
+    template: templates/well-known.yaml
+    documentSelector:
+      path: metadata.name
+      value: gw-auth-well-known
+    asserts:
+      - isKind:
+          of: Ingress
+      - notExists:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/ssl-redirect"]

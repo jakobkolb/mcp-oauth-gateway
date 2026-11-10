@@ -80,8 +80,6 @@ metadata:
   name: {{ $rn }}-{{ .subdomain }}-well-known
   labels:
     app.kubernetes.io/managed-by: {{ $.Release.Service }}
-  annotations:
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"
 spec:
   ingressClassName: nginx
   tls:
@@ -119,8 +117,6 @@ metadata:
   name: {{ $rn }}-auth-well-known
   labels:
     app.kubernetes.io/managed-by: {{ .Release.Service }}
-  annotations:
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"
 spec:
   ingressClassName: nginx
   tls:
