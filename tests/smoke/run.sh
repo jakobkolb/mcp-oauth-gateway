@@ -14,9 +14,11 @@ CHART_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORK_DIR="$(mktemp -d)"
 NETWORK="api-gateway-smoke"
 RELEASE="smoke"
-DEX_IMAGE="${DEX_IMAGE:-dexidp/dex:v2.41.1}"
-OPENRESTY_IMAGE="${OPENRESTY_IMAGE:-openresty/openresty:alpine}"
-OAUTH2_PROXY_IMAGE="${OAUTH2_PROXY_IMAGE:-quay.io/oauth2-proxy/oauth2-proxy:v7.7.1}"
+# Dex and oauth2-proxy come from subcharts, so their versions are set here and must follow
+# the dependency versions in Chart.yaml (dex 0.24.0 -> v2.44.0, oauth2-proxy 10.7.3 -> v7.15.6).
+# The well-known image is read from the rendered chart below.
+DEX_IMAGE="${DEX_IMAGE:-dexidp/dex:v2.44.0}"
+OAUTH2_PROXY_IMAGE="${OAUTH2_PROXY_IMAGE:-quay.io/oauth2-proxy/oauth2-proxy:v7.15.6}"
 DEX_PORT=5556
 WK_PORT=8080
 INGRESS_PORT=8081
@@ -43,6 +45,9 @@ helm template "$RELEASE" "$WORK_DIR/chart" \
   --set 'mcpEndpoints[0].service=mcp-calendar' \
   > "$WORK_DIR/rendered.yaml"
 
+OPENRESTY_IMAGE="${OPENRESTY_IMAGE:-$(sed -n 's/^ *image: *"\{0,1\}\(openresty\/openresty:[^" ]*\).*/\1/p' "$WORK_DIR/rendered.yaml" | head -1)}"
+echo "==> Well-known image: $OPENRESTY_IMAGE"
+
 echo "==> Extracting chart artifacts"
 python3 "$CHART_DIR/tests/smoke/render.py" \
   "$WORK_DIR/rendered.yaml" "$CHART_DIR/values.yaml" "$WORK_DIR" "$RELEASE" "$DEX_PORT"
@@ -55,7 +60,10 @@ docker rm -f "$RELEASE-dex" "$RELEASE-well-known" "$RELEASE-oauth2-proxy" \
 docker run -d --name "$RELEASE-dex" --network "$NETWORK" -p "$DEX_PORT:$DEX_PORT" \
   -v "$WORK_DIR/dex.yaml:/etc/dex/config.yaml:ro" \
   "$DEX_IMAGE" dex serve /etc/dex/config.yaml >/dev/null
+# Same capabilities as the chart's securityContext, so the smoke test covers them.
 docker run -d --name "$RELEASE-well-known" --network "$NETWORK" -p "$WK_PORT:80" \
+  --cap-drop ALL --cap-add CHOWN --cap-add SETGID --cap-add SETUID --cap-add NET_BIND_SERVICE \
+  --security-opt no-new-privileges \
   -v "$WORK_DIR/default.conf:/etc/nginx/conf.d/default.conf:ro" \
   "$OPENRESTY_IMAGE" >/dev/null
 docker run -d --name "$RELEASE-upstream" --network "$NETWORK" \

@@ -1,0 +1,56 @@
+# helm unittest tests for the well-known container: pinned image, reduced privileges
+suite: well-known container
+templates:
+  - templates/well-known.yaml
+tests:
+  - it: runs a pinned OpenResty version, never a floating tag
+    set:
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      mcpEndpoints:
+        - subdomain: test
+          service: mcp-test
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: ^openresty/openresty:[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?-alpine$
+
+  - it: the image can be overridden through values
+    set:
+      wellKnown.image: registry.example.com/openresty:1.2.3
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      mcpEndpoints:
+        - subdomain: test
+          service: mcp-test
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: registry.example.com/openresty:1.2.3
+
+  - it: drops all capabilities except what nginx needs and forbids privilege escalation
+    set:
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      mcpEndpoints:
+        - subdomain: test
+          service: mcp-test
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop
+          value: [ALL]
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.capabilities.add
+          value: [CHOWN, SETGID, SETUID, NET_BIND_SERVICE]
