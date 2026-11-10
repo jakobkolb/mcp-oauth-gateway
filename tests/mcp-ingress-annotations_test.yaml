@@ -21,6 +21,23 @@ tests:
       - notExists:
           path: metadata.annotations["nginx.ingress.kubernetes.io/proxy-body-size"]
 
+  - it: strips client-supplied identity headers and the bearer token before the backend
+    set:
+      global.baseDomain: mcp.example.com
+      global.authServerUrl: https://auth.mcp.example.com
+      mcpEndpoints:
+        - subdomain: calendar
+          service: mcp-calendar
+    documentIndex: 0
+    asserts:
+      # oauth2-proxy returns none of these, so listing them makes nginx overwrite the
+      # client's value with an empty one, which drops the header. Dropping an entry
+      # forwards the client's header, and with Authorization that is a token valid at
+      # every endpoint.
+      - equal:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/auth-response-headers"]
+          value: "X-Auth-Request-User,X-Auth-Request-Email,X-Forwarded-User,X-Forwarded-Email,Authorization"
+
   - it: extra annotations land on the ingress
     set:
       global.baseDomain: mcp.example.com
