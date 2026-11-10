@@ -107,12 +107,27 @@ oauth2-proxy:
     # When changing domain: update oidc-issuer-url to match global.authServerUrl (https://auth.<baseDomain>)
     oidc-issuer-url: https://auth.mcp.jakobjkolb.xyz
     upstream: file:///dev/null      # external-auth mode only — no reverse proxying
-    email-domain: "*"
     skip-jwt-bearer-tokens: "true"  # validate Bearer JWTs directly (no session cookie)
     skip-provider-button: "true"
     http-address: 0.0.0.0:4180
   config:
     existingSecret: oauth2-proxy      # created by secrets-bootstrap.sh (ArgoCD) or templates/secrets.yaml
+    # Replaces the oauth2-proxy chart's default, which carries email_domains = ["*"].
+    configFile: |-
+      upstreams = [ "file:///dev/null" ]
+  # Who may log in.  Dex's GitHub connector issues an identity to every GitHub
+  # account, so without this list anyone with a GitHub account gets a token for
+  # every MCP endpoint.  The addresses live in the Secret
+  # oauth2-proxy-allowed-emails (key restricted_user_access, one per line),
+  # created from global.secrets.allowedEmails by templates/secrets.yaml or by
+  # the deployment's own secret bootstrap.  There is deliberately no
+  # email-domain fallback: without the Secret the pod does not start.
+  # A token without an email claim is rejected, which is why /auth injects the
+  # "email" scope (templates/_well-known-config.tpl).
+  authenticatedEmailsFile:
+    enabled: true
+    persistence: secret
+    template: oauth2-proxy-allowed-emails
   service:
     type: ClusterIP
     portNumber: 4180

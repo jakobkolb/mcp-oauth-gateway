@@ -1,0 +1,34 @@
+# helm unittest tests for the login allow-list
+suite: login allow-list
+templates:
+  - templates/secrets.yaml
+tests:
+  - it: createSecrets renders the allow-list Secret
+    set:
+      global.createSecrets: true
+      global.secrets:
+        githubClientId: id
+        githubClientSecret: secret
+        dexClientSecret: secret
+        cookieSecret: cookie
+        allowedEmails: owner@example.com
+    documentIndex: 3
+    asserts:
+      - equal:
+          path: metadata.name
+          value: oauth2-proxy-allowed-emails
+      - equal:
+          path: stringData.restricted_user_access
+          value: owner@example.com
+
+  - it: createSecrets without an allow-list is a hard error
+    set:
+      global.createSecrets: true
+      global.secrets:
+        githubClientId: id
+        githubClientSecret: secret
+        dexClientSecret: secret
+        cookieSecret: cookie
+    asserts:
+      - failedTemplate:
+          errorPattern: global.secrets.allowedEmails is required
